@@ -36,7 +36,7 @@
     <!-- 引入 Three.js -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
-    <!-- 【新增】引入 Tween.js 用于动画 -->
+    <!-- 引入 Tween.js 用于动画 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tween.js/18.6.4/tween.umd.js"></script>
 </head>
 <body>
@@ -91,14 +91,13 @@
 
     let scene, camera, renderer, controls;
     let axisScene, axisCamera, axisRenderer;
-    // grid 存储数字状态, cubes 存储 mesh 对象
     let grid = []; 
     let cubes = []; 
     let score = 0;
     let font = null;
     let gridHelperGroup = null;
     let isGridVisible = true;
-    let isAnimating = false; // 防止动画过程中重复触发
+    let isAnimating = false; 
 
     // --- 2. 初始化 ---
     function init() {
@@ -126,6 +125,15 @@
         controls = new THREE.OrbitControls(camera, renderer.domElement);
         controls.enableDamping = true;
         controls.dampingFactor = 0.05;
+        
+        // --- 修改 1: 解除 360 度旋转限制 ---
+        controls.minPolarAngle = 0;         // 允许垂直向上看到顶 (0度)
+        controls.maxPolarAngle = Math.PI;   // 允许垂直向下看到底 (180度)
+        controls.minAzimuthAngle = -Infinity; // 水平方向无限旋转
+        controls.maxAzimuthAngle = Infinity;
+        controls.enableRotate = true;
+        controls.screenSpacePanning = false; 
+
 
         initAxisHelper();
         createGridData();
@@ -202,7 +210,9 @@
         const totalLen = GRID_SIZE * OFFSET_STEP;
         const geometry = new THREE.BoxGeometry(totalLen, totalLen, totalLen);
         const edges = new THREE.EdgesGeometry(geometry);
-        const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x666666 }));
+        const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ 
+            color: 0xaaaaaa 
+        }));
         scene.add(line);
     }
 
@@ -210,7 +220,13 @@
         gridHelperGroup = new THREE.Group();
         const fullSize = GRID_SIZE * OFFSET_STEP;
         const halfSize = fullSize / 2;
-        const material = new THREE.LineDashedMaterial({ color: 0x444444, dashSize: 1, gapSize: 1, opacity: 0.4, transparent: true });
+        const material = new THREE.LineDashedMaterial({ 
+            color: 0xffffff, // 原来是 0x444444
+            dashSize: 1, 
+            gapSize: 1, 
+            opacity: 0.15,    // 建议透明度设低一点 (0.3左右)
+            transparent: true 
+        });
         function addLine(p1, p2) {
             const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([p1, p2]), material);
             line.computeLineDistances(); gridHelperGroup.add(line);
@@ -235,7 +251,7 @@
         score = 0;
         updateScore();
         document.getElementById('game-over').style.display = 'none';
-        TWEEN.removeAll(); // 清除所有动画
+        TWEEN.removeAll(); 
         isAnimating = false;
         for(let x=0; x<GRID_SIZE; x++)
             for(let y=0; y<GRID_SIZE; y++)
@@ -257,7 +273,6 @@
         };
     }
 
-    // --- 核心渲染逻辑 ---
     function createCube(x, y, z, value, isNew = false) {
         const pos = getPosition(x, y, z);
         const group = new THREE.Group();
@@ -265,7 +280,6 @@
 
         const color = COLORS[value] || COLORS[131072];
         
-        // 1. 主体
         const geometry = new THREE.BoxGeometry(CUBE_SIZE, CUBE_SIZE, CUBE_SIZE);
         const material = new THREE.MeshPhysicalMaterial({
             color: color, transparent: true, opacity: 0.85, 
@@ -276,14 +290,12 @@
         cubeMesh.scale.set(0.95, 0.95, 0.95);
         group.add(cubeMesh);
 
-        // 2. 边框
         const edges = new THREE.EdgesGeometry(geometry);
         const lineMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.3 });
         const edgeLines = new THREE.LineSegments(edges, lineMat);
         edgeLines.scale.set(0.95, 0.95, 0.95);
         group.add(edgeLines);
 
-        // 3. 文字
         if(font) {
             const textGeo = new THREE.TextGeometry(value.toString(), {
                 font: font, size: value > 1000 ? CUBE_SIZE * 0.3 : CUBE_SIZE * 0.4, height: 0.5, curveSegments: 3
@@ -300,7 +312,6 @@
             group.add(textMesh);
         }
 
-        // 如果是新生成的方块，添加出现动画
         if(isNew) {
             group.scale.set(0, 0, 0);
             new TWEEN.Tween(group.scale)
@@ -324,12 +335,9 @@
         let c = empty[Math.floor(Math.random() * empty.length)];
         let val = Math.random() < 0.9 ? 2 : 4;
         grid[c.x][c.y][c.z] = val;
-        createCube(c.x, c.y, c.z, val, true); // 标记为 isNew
+        createCube(c.x, c.y, c.z, val, true);
     }
 
-    // --- 移动与动画逻辑 (重写版) ---
-
-    // 移动单个 Mesh 的动画
     function slideCube(mesh, targetX, targetY, targetZ) {
         const targetPos = getPosition(targetX, targetY, targetZ);
         return new TWEEN.Tween(mesh.position)
@@ -337,11 +345,9 @@
             .easing(TWEEN.Easing.Quadratic.InOut);
     }
 
-    // 合并后的“Pop”动画
     function popCube(x, y, z) {
         const mesh = cubes[x][y][z];
         if (!mesh) return;
-        // 先放大再缩小
         new TWEEN.Tween(mesh.scale)
             .to({ x: 1.2, y: 1.2, z: 1.2 }, 100)
             .easing(TWEEN.Easing.Quadratic.Out)
@@ -355,20 +361,15 @@
     }
 
     function move(direction) {
-        if(isAnimating) return; // 动画播放中禁止操作
+        if(isAnimating) return; 
 
         let moved = false;
         let scoreGain = 0;
-        // 记录移动操作: { from: {x,y,z}, to: {x,y,z}, isMerge: boolean, mergeValue: number }
         let animations = []; 
-        // 记录即将合并删除的方块 mesh
         let toRemove = []; 
-        // 记录合并发生的位置，用于生成动画和更新
         let merges = [];
-
-        // 临时网格，用于计算下一帧状态，不直接修改 grid，直到动画结束
         let nextGrid = [];
-        // 深度复制 grid
+        
         for(let x=0; x<GRID_SIZE; x++) {
             nextGrid[x] = [];
             for(let y=0; y<GRID_SIZE; y++) {
@@ -379,76 +380,46 @@
             }
         }
 
-        // 处理单行逻辑 (返回 moves 列表)
         const processLine = (coords) => {
-            // coords 是坐标数组 [{x,y,z}, {x,y,z}...] 按扫描顺序排列
-            // 提取该行现有的非零方块
-            let activeTiles = []; // [{val: 2, originalPos: {x,y,z}}, ...]
+            let activeTiles = []; 
             for(let c of coords) {
                 let val = grid[c.x][c.y][c.z];
                 if(val !== 0) activeTiles.push({ val: val, pos: c });
             }
 
-            // 计算目标位置
             let writeIdx = 0;
             for(let i=0; i<activeTiles.length; i++) {
                 let current = activeTiles[i];
                 let next = activeTiles[i+1];
-                
-                // 目标坐标
                 let targetPos = coords[writeIdx];
 
                 if(next && current.val === next.val) {
-                    // 合并情况
                     let mergedVal = current.val * 2;
                     scoreGain += mergedVal;
-                    
-                    // 记录动画: current -> targetPos (merge)
                     animations.push({ mesh: cubes[current.pos.x][current.pos.y][current.pos.z], to: targetPos, type: 'merge_src' });
-                    // 记录动画: next -> targetPos (merge_dest) - 也就是被合并进去那个
                     animations.push({ mesh: cubes[next.pos.x][next.pos.y][next.pos.z], to: targetPos, type: 'merge_dest' });
-
-                    // 记录需要删除的旧 Mesh
                     toRemove.push(cubes[current.pos.x][current.pos.y][current.pos.z]);
                     toRemove.push(cubes[next.pos.x][next.pos.y][next.pos.z]);
-
-                    // 记录逻辑更新
                     nextGrid[targetPos.x][targetPos.y][targetPos.z] = mergedVal;
-                    // 记录需要产生的新方块位置
                     merges.push({ x: targetPos.x, y: targetPos.y, z: targetPos.z, val: mergedVal });
-
                     writeIdx++;
-                    i++; // 跳过下一个
+                    i++; 
                     moved = true;
                 } else {
-                    // 只是移动
                     if(current.pos.x !== targetPos.x || current.pos.y !== targetPos.y || current.pos.z !== targetPos.z) {
                         moved = true;
                         animations.push({ mesh: cubes[current.pos.x][current.pos.y][current.pos.z], to: targetPos, type: 'move' });
-                        
-                        // 移动 Mesh 引用，防止被覆盖
-                        // 注意：这里不应该直接修改 cubes，因为可能多对一冲突，我们只在动画结束统一重建
                     }
-                    
-                    // 逻辑更新
                     nextGrid[targetPos.x][targetPos.y][targetPos.z] = current.val;
-                    
-                    // 如果原位置和目标位置不一样，且原位置没有被新的逻辑覆盖，则清空原位置
-                    // 但这里我们是整行重写 nextGrid 的对应位置，所以没问题。
-                    // 需要把剩下的位置清零
                     writeIdx++;
                 }
             }
-
-            // 剩下的位置补0
             for(let i = writeIdx; i < GRID_SIZE; i++) {
                 let c = coords[i];
                 nextGrid[c.x][c.y][c.z] = 0;
             }
         };
 
-        // 遍历所有行
-        // 抽象方向：始终认为是向 index 0 移动
         for(let a=0; a<GRID_SIZE; a++) {
             for(let b=0; b<GRID_SIZE; b++) {
                 let lineCoords = [];
@@ -466,24 +437,16 @@
 
         if(!moved) return;
 
-        // --- 执行动画 ---
         isAnimating = true;
-        
-        // 1. 播放所有移动动画
         let tweenCount = 0;
         const onAllFinished = () => {
-            // 动画全部结束后：
-            
-            // A. 清理所有旧 Mesh
             for(let x=0; x<GRID_SIZE; x++)
                 for(let y=0; y<GRID_SIZE; y++)
                     for(let z=0; z<GRID_SIZE; z++) 
                         if(cubes[x][y][z]) { scene.remove(cubes[x][y][z]); cubes[x][y][z] = null; }
             
-            // B. 更新逻辑网格
             grid = nextGrid;
 
-            // C. 根据 Grid 重建场景中的方块 (除了刚刚生成的 empty tile)
             for(let x=0; x<GRID_SIZE; x++) {
                 for(let y=0; y<GRID_SIZE; y++) {
                     for(let z=0; z<GRID_SIZE; z++) {
@@ -494,11 +457,7 @@
                     }
                 }
             }
-
-            // D. 对合并位置播放 Pop 动画
             merges.forEach(m => popCube(m.x, m.y, m.z));
-
-            // E. 加分 & 新方块 & 检查
             score += scoreGain;
             updateScore();
             addRandomTile();
@@ -513,7 +472,6 @@
 
         animations.forEach(anim => {
             const t = slideCube(anim.mesh, anim.to.x, anim.to.y, anim.to.z);
-            // 只在最后一个动画结束时回调
             tweenCount++;
             if(tweenCount === animations.length) {
                 t.onComplete(onAllFinished);
@@ -571,23 +529,46 @@
         if (key === 'r') resetGame();
     }
 
+    // --- 修改 2: 修正的智能视角判定逻辑 ---
     function getSmartDirection(inputVector2D) {
-        const directions = [
-            { id: 'x+', vec: new THREE.Vector3(1, 0, 0) }, { id: 'x-', vec: new THREE.Vector3(-1, 0, 0) },
-            { id: 'y+', vec: new THREE.Vector3(0, 1, 0) }, { id: 'y-', vec: new THREE.Vector3(0, -1, 0) },
-            { id: 'z+', vec: new THREE.Vector3(0, 0, 1) }, { id: 'z-', vec: new THREE.Vector3(0, 0, -1) }
-        ];
-        let bestDir = null; let maxDot = -Infinity;
         camera.updateMatrixWorld();
-        directions.forEach(dir => {
-            const origin = new THREE.Vector3(0, 0, 0);
-            const target = dir.vec.clone().multiplyScalar(10);
-            origin.project(camera); target.project(camera);
-            const screenVec = new THREE.Vector2(target.x - origin.x, target.y - origin.y);
-            screenVec.normalize();
-            const dot = inputVector2D.dot(screenVec);
-            if (dot > maxDot) { maxDot = dot; bestDir = dir.id; }
+        
+        // 获取相机的右向量和上向量 (定义了屏幕平面)
+        const camRight = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0).normalize();
+        const camUp = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1).normalize();
+        
+        const directions = [
+            { id: 'x+', vec: new THREE.Vector3(1, 0, 0) },
+            { id: 'x-', vec: new THREE.Vector3(-1, 0, 0) },
+            { id: 'y+', vec: new THREE.Vector3(0, 1, 0) },
+            { id: 'y-', vec: new THREE.Vector3(0, -1, 0) },
+            { id: 'z+', vec: new THREE.Vector3(0, 0, 1) },
+            { id: 'z-', vec: new THREE.Vector3(0, 0, -1) }
+        ];
+        
+        let bestDir = null;
+        let bestScore = -Infinity;
+
+        directions.forEach(d => {
+            // 1. 将世界方向向量投影到屏幕坐标系 (Right, Up)
+            const screenX = d.vec.dot(camRight);
+            const screenY = d.vec.dot(camUp);
+            const screenVec = new THREE.Vector2(screenX, screenY);
+            
+            // 关键点：这里不应该对 screenVec 进行 normalize()。
+            // 向量的长度代表了该轴在屏幕上的“可见长度”。
+            // 如果某个轴（比如从上往下看时的Y轴）几乎指向屏幕深处，它的投影长度接近0。
+            // 如果我们不归一化，点积的结果会自动变小，从而自然过滤掉“推/拉”轴。
+
+            // 2. 计算与输入向量的点积 (相似度 * 投影长度)
+            const score = screenVec.dot(inputVector2D);
+
+            if (score > bestScore) {
+                bestScore = score;
+                bestDir = d.id;
+            }
         });
+        
         return bestDir;
     }
 
@@ -614,7 +595,6 @@
 
     function animate(time) {
         requestAnimationFrame(animate);
-        // 【更新】每一帧都需要更新 Tween
         TWEEN.update(time);
         controls.update();
 
